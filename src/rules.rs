@@ -1,18 +1,8 @@
-//! The pure rules, on plain values: who gets a copy of a mob's loot, and how marks are kept.
+//! The pure loot rules, on plain values: who gets a copy of a mob's loot, and how many.
 //! No game calls here, so every rule is unit tested.
-
-/// A block position.
-pub type Pos = [i32; 3];
 
 /// Players within this many blocks of a dying mob get their own copy of its loot.
 pub const NEAR: f64 = 32.0;
-/// How far a mark can be placed.
-pub const REACH: f32 = 128.0;
-/// A mark lasts 30 seconds.
-pub const MARK_TICKS: u64 = 600;
-/// At most this many marks per player; a new one past it replaces that player's oldest.
-pub const MARKS_EACH: usize = 5;
-
 /// A player as the loot rule sees them.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Near {
@@ -64,71 +54,6 @@ pub fn copies<D: Clone>(drops: &[D], recipients: &[u128], owner: impl Fn(&D) -> 
         }
     }
     out
-}
-
-/// A mark placed by a player.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Mark {
-    pub owner: u128,
-    pub name: String,
-    pub dimension: String,
-    pub pos: Pos,
-    /// The server tick it goes at.
-    pub until: u64,
-    /// The text display showing the name, once summoned.
-    pub label: Option<u32>,
-}
-
-/// What pressing the mark key did.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Pressed {
-    /// A new mark; `replaced` is the owner's oldest, taken out to stay within [`MARKS_EACH`].
-    Placed { replaced: Option<Mark> },
-    /// The player's own mark there was taken back.
-    Removed(Mark),
-}
-
-/// The marks of every player.
-#[derive(Default, Debug)]
-pub struct Marks {
-    pub list: Vec<Mark>,
-}
-
-/// Near enough to count as the same spot (the block or one beside it).
-fn same_spot(a: Pos, b: Pos) -> bool {
-    (0..3).all(|i| (a[i] - b[i]).abs() <= 1)
-}
-
-impl Marks {
-    /// A player pressed the mark key looking at `pos`: their own mark there goes, else a new one
-    /// lasting [`MARK_TICKS`] from `now`, the oldest of theirs going past [`MARKS_EACH`].
-    pub fn press(&mut self, owner: u128, name: &str, dimension: &str, pos: Pos, now: u64) -> Pressed {
-        if let Some(i) = self.list.iter().position(|m| m.owner == owner && m.dimension == dimension && same_spot(m.pos, pos)) {
-            return Pressed::Removed(self.list.remove(i));
-        }
-        let mut replaced = None;
-        if self.list.iter().filter(|m| m.owner == owner).count() >= MARKS_EACH
-            && let Some(i) = self.list.iter().position(|m| m.owner == owner)
-        {
-            replaced = Some(self.list.remove(i));
-        }
-        self.list.push(Mark { owner, name: name.into(), dimension: dimension.into(), pos, until: now + MARK_TICKS, label: None });
-        Pressed::Placed { replaced }
-    }
-
-    /// Takes out and returns the marks whose time is up at `now`.
-    pub fn expire(&mut self, now: u64) -> Vec<Mark> {
-        let (gone, kept) = std::mem::take(&mut self.list).into_iter().partition(|m| m.until <= now);
-        self.list = kept;
-        gone
-    }
-}
-
-/// A player's colour (0xRRGGBB), the same for the beam and the name, from their UUID.
-pub fn colour(uuid: u128) -> u32 {
-    const PALETTE: [u32; 8] = [0x55FFFF, 0xFFAA00, 0x55FF55, 0xFF55FF, 0xFFFF55, 0xFF5555, 0x5599FF, 0xFFFFFF];
-    let folded = (uuid as u64) ^ ((uuid >> 64) as u64);
-    PALETTE[(folded % PALETTE.len() as u64) as usize]
 }
 
 #[cfg(test)]
@@ -191,57 +116,5 @@ mod tests {
         for who in [A, B] {
             assert_eq!(out.iter().filter(|d| d.1 == Some(who) && d.0 == "bone").count(), 1);
         }
-    }
-
-    #[test]
-    fn pressing_on_your_own_mark_removes_it() {
-        let mut m = Marks::default();
-        assert_eq!(m.press(A, "a", "o", [0, 0, 0], 0), Pressed::Placed { replaced: None });
-        assert!(matches!(m.press(A, "a", "o", [1, 0, 0], 5), Pressed::Removed(_)));
-        assert!(m.list.is_empty());
-    }
-
-    #[test]
-    fn a_friends_mark_is_not_yours_to_remove() {
-        let mut m = Marks::default();
-        m.press(A, "a", "o", [0, 0, 0], 0);
-        assert_eq!(m.press(B, "b", "o", [0, 0, 0], 0), Pressed::Placed { replaced: None });
-        assert_eq!(m.list.len(), 2);
-    }
-
-    #[test]
-    fn the_sixth_mark_replaces_the_oldest() {
-        let mut m = Marks::default();
-        m.press(B, "b", "o", [0, 0, 0], 0);
-        for i in 0..5 {
-            m.press(A, "a", "o", [i * 10, 0, 0], i as u64);
-        }
-        let Pressed::Placed { replaced: Some(old) } = m.press(A, "a", "o", [100, 0, 0], 9) else { panic!() };
-        assert_eq!(old.pos, [0, 0, 0]);
-        assert_eq!(old.owner, A);
-        assert_eq!(m.list.iter().filter(|x| x.owner == A).count(), MARKS_EACH);
-        assert_eq!(m.list.iter().filter(|x| x.owner == B).count(), 1);
-    }
-
-    #[test]
-    fn marks_go_after_thirty_seconds() {
-        let mut m = Marks::default();
-        m.press(A, "a", "o", [0, 0, 0], 0);
-        m.press(A, "a", "o", [50, 0, 0], 100);
-        assert!(m.expire(599).is_empty());
-        assert_eq!(m.expire(600).len(), 1);
-        assert_eq!(m.list.len(), 1);
-    }
-
-    #[test]
-    fn same_spot_in_another_dimension_is_a_new_mark() {
-        let mut m = Marks::default();
-        m.press(A, "a", "overworld", [0, 0, 0], 0);
-        assert!(matches!(m.press(A, "a", "nether", [0, 0, 0], 0), Pressed::Placed { .. }));
-    }
-
-    #[test]
-    fn colours_are_stable() {
-        assert_eq!(colour(42), colour(42));
     }
 }

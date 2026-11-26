@@ -1,17 +1,13 @@
 //! Share: co-op comforts for players together. See `docs/design.md`.
 //!
-//! - **The rules** (`rules.rs`, `coop.rs`): every decision on plain values, unit tested.
+//! - **The rules** (`rules.rs` for loot, `coop.rs` for the rest): every decision on plain values, unit tested.
 //! - **World** (`world.rs`): the clock and the players, read one way for all parts.
 //! - **Loot** (`loot.rs`): a mob's drops and experience once for each player near.
-//! - **Marks** (`marks.rs`, `client.rs`): J marks a spot with a beam and your name for 30 s.
 //! - **Revive** (`revive.rs`): down for 30 s instead of dead while a friend can come.
 //! - **Throw** (`throw.rs`): Q while looking at a friend hands them the item.
 //! - **Pets** (`pets.rs`): a friend's pets obey you too; team hit on a mob a friend just hit.
-mod client;
 pub mod coop;
 mod loot;
-mod marks;
-mod payloads;
 mod pets;
 mod revive;
 pub mod rules;
@@ -19,28 +15,24 @@ mod throw;
 mod world;
 
 use mod_api::{
-    AttackEntityEvent, ClientHost, ClientTickPreEvent, EntityInteractEvent, EntityJoinLevelEvent, EntityLeaveLevelEvent, EntityTameEvent, Flow,
-    Hooks, Host, HostSide, IPayloadContext, InteractionResult, ItemTossEvent, KeyRegistration, LevelRandomHost, LivingDamagePostEvent,
-    LivingDamagePreEvent, LivingDeathEvent, LivingDropsEvent, LivingExperienceDropEvent, PayloadId, PlayerLoggedOutEvent, PlayerRef, Registrar,
-    RegistrationContext, RenderLevelStageEvent, ServerHost, ServerTickEvent, ServerTickPhase, SettingSpec,
+    AttackEntityEvent, EntityInteractEvent, EntityJoinLevelEvent, EntityLeaveLevelEvent, EntityTameEvent, Flow,
+    Hooks, Host, HostSide, InteractionResult, ItemTossEvent, LevelRandomHost, LivingDamagePostEvent,
+    LivingDamagePreEvent, LivingDeathEvent, LivingDropsEvent, LivingExperienceDropEvent, PlayerLoggedOutEvent, Registrar,
+    RegistrationContext, ServerHost, ServerTickEvent, ServerTickPhase, SettingSpec,
 };
 #[allow(unused_imports)]
 use mod_api::prelude::*;
 
 pub(crate) const MOD_ID: &str = "share";
-/// The mark key: J, free in vanilla and the other mods (B emotes, Y a mod screen, Z and U Builder).
-const MARK_KEY: &str = "mark";
-
 /// Settings (Options > Mods > Share), each on by default.
 pub(crate) mod setting {
     pub const LOOT: &str = "loot";
-    pub const MARKS: &str = "marks";
     pub const REVIVE: &str = "revive";
     pub const THROW: &str = "throw";
     pub const PETS: &str = "pets";
     pub const TEAM_HIT: &str = "team_hit";
     /// Every setting, each a toggle on by default, labelled `share.config.<key>`.
-    pub const ALL: [&str; 6] = [LOOT, MARKS, REVIVE, THROW, PETS, TEAM_HIT];
+    pub const ALL: [&str; 5] = [LOOT, REVIVE, THROW, PETS, TEAM_HIT];
 }
 
 /// Whether the setting `key` is on (a toggle, on unless set to false).
@@ -48,18 +40,20 @@ pub(crate) fn enabled(host: &dyn Host, key: &str) -> bool {
     host.setting(MOD_ID, key).is_none_or(|v| v.trim() != "false")
 }
 
-fn on_press(press: payloads::Press, cx: &mut dyn IPayloadContext) -> Result<(), String> {
-    let p: PlayerRef = cx.player().map_err(|e| format!("{e:?}"))?;
-    let host = cx.server_host().map_err(|e| format!("{e:?}"))?;
-    if let [x, y, z] = press.at.as_slice() {
-        marks::press(host, p, [x.0, y.0, z.0]);
-    }
-    Ok(())
-}
+/// The name labels of the marks of 0.1–0.2.0 (J), retired for Team's pings: one left in a saved
+/// world (a server stopped within a mark's 30 s) is removed when it loads.
+const OLD_MARK_TAG: &str = "share.mark";
 
-fn on_marks(view: payloads::Marks, _: &mut dyn IPayloadContext) -> Result<(), String> {
-    client::received(view);
-    Ok(())
+fn retire_mark_label(host: &mut dyn ServerHost, id: u32, kind: &str) {
+    if kind != "minecraft:text_display" {
+        return;
+    }
+    let read: &dyn Host = &*host;
+    if let Some(e) = read.entity(id)
+        && e.tags(read).is_some_and(|t| t.iter().any(|t| t == OLD_MARK_TAG))
+    {
+        e.discard(host);
+    }
 }
 
 #[derive(Default)]
@@ -68,32 +62,11 @@ pub struct Mod;
 #[mod_api::horizon_mod]
 impl Hooks for Mod {
     fn register(&self, r: &mut dyn Registrar, _cx: &RegistrationContext) {
-        let mut key = KeyRegistration::new(MARK_KEY, "key.keyboard.j");
-        key.label = "key.share.mark".into();
-        r.register_key_mapping(key);
         for key in setting::ALL {
             if let Err(e) = r.register_setting(SettingSpec::toggle(key, format!("share.config.{key}"), true)) {
                 eprintln!("[share] setting {key}: {e:?}");
             }
         }
-        let mut handlers = r.payload_handlers();
-        let mut v1 = handlers.registrar("1").optional();
-        let _ = payloads::PRESS.set(v1.play_to_server_typed(PayloadId("share:press".into()), on_press));
-        let _ = payloads::MARKS.set(v1.play_to_client_typed(PayloadId("share:marks".into()), on_marks));
-    }
-
-    fn client_tick_pre(&self, host: &mut dyn ClientHost, _: &mut ClientTickPreEvent) {
-        let mut pressed = false;
-        while host.consume_click(MOD_ID, MARK_KEY) {
-            pressed = true;
-        }
-        if pressed {
-            client::press(host);
-        }
-    }
-
-    fn render_level_stage(&self, host: &dyn ClientHost, event: &mut RenderLevelStageEvent<'_>) {
-        client::draw(host, event);
     }
 
     /// A dying mob's items: one copy for each player near.
@@ -109,7 +82,7 @@ impl Hooks for Mod {
     }
 
     fn entity_join_level(&self, host: &mut dyn ServerHost, event: &mut EntityJoinLevelEvent<'_>) -> Flow {
-        marks::joined(host, event.entity, event.kind);
+        retire_mark_label(host, event.entity, event.kind);
         pets::seen(host, event.entity, event.kind);
         Flow::Continue
     }
@@ -157,14 +130,12 @@ impl Hooks for Mod {
         if matches!(event.phase, ServerTickPhase::ServerTickEnd { .. }) {
             world::tick(host);
             loot::tick(host);
-            marks::tick(host);
             revive::tick(host);
             pets::tick(host);
         }
     }
 
     fn player_logged_out(&self, _: &mut dyn ServerHost, event: &mut PlayerLoggedOutEvent<'_>) {
-        marks::forget(event.player);
         revive::forget(event.player);
     }
 }

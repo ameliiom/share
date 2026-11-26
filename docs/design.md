@@ -1,6 +1,6 @@
 # Share: design
 
-Co-op comforts for two or more players. 0.1.0: ideas 1 and 2 of `docs/batch-3.md`; 0.2.0: the
+Co-op comforts for two or more players. 0.1.0: ideas 1 and 2 of `docs/batch-3.md` (the marks retired in 0.2.1); 0.2.0: the
 four comforts of `docs/batch-4.md` no other mod of the set already gives (picked 2026-11-26).
 
 ## 1. Outcome
@@ -27,20 +27,11 @@ coordinates in chat.
 Known in v0.1: everyone sees every copy (only the owner can pick theirs up); a mob's drops include
 items it picked up (a fox's mouth item), which are copied as well.
 
-## 3. Mark for a friend
+## 3. Mark for a friend (0.1.0–0.2.0, retired in 0.2.1)
 
-- **J** (rebindable; B, Y, Z, U are taken by Horizon and the other mods) on a block up to **128**
-  away places a mark: a light beam 64 blocks high in your colour, the block outlined, and your
-  name above it, seen by every player in that dimension for **30 seconds** (fading the last 3).
-- J on your own mark (that block or one beside it) takes it back. At most **5** per player; a
-  sixth replaces your oldest.
-- The client sends the block it looks at; the server checks the reach, keeps the marks, sends each
-  player the marks of their dimension (again when they join or change dimension), and summons a
-  vanilla text display with the name (tagged `share.mark`; one left from a stopped server is
-  removed when it loads).
-- The beam is drawn by the client (`render_level_stage`: quads, the outline and a core line seen
-  through hills).
-- Setting **Marks for friends** (server) turns it off.
+J placed a 30 s beam and name for friends. Team's V pings do the same (through walls, 30 s,
+take your own back), so 0.2.1 removes Share's marks: one meaning, one place. The only code left
+removes a mark label (a text display tagged `share.mark`) left in a saved world when it loads.
 
 ## 4. Batch 4 (0.2.0): what is here, what is elsewhere
 
@@ -105,9 +96,7 @@ revived; throwing to a friend; team hit's extra damage.
 
 Solo stays vanilla · killer once and first · far, spectating and creative players get none · a far
 killer still gets theirs · a spectating killer gets none · players, armor stands and unhit deaths
-not shared · one copy of each drop per recipient, owned drops once · your own mark removed, a
-friend's not · the sixth mark replaces your oldest · marks go at 30 s · same spot in another
-dimension is a new mark · beam and fade geometry. · a player goes down only with a friend online · `/kill`, the void, creative and a second
+not shared · one copy of each drop per recipient, owned drops once . · a player goes down only with a friend online · `/kill`, the void, creative and a second
 death are final · 3 s of sneaking revives · stepping away resets · 30 s alone is death · a throw
 goes to the nearest friend looked at, not past reach, behind or aside · team hit needs a friend's
 blow within 2 s, never on players or pets · pets follow a friend only while the owner is away.

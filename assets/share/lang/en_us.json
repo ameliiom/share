@@ -1,5 +1,13 @@
 {
   "key.share.mark": "Share: mark a spot for friends",
   "share.config.loot": "Loot for each player near",
-  "share.config.marks": "Marks for friends (J)"
+  "share.config.marks": "Marks for friends (J)",
+  "share.config.revive": "Revive instead of death",
+  "share.config.throw": "Throw items to a friend (Q)",
+  "share.config.pets": "Pets obey both players",
+  "share.config.team_hit": "Team hit (+25% on a mob a friend just hit)",
+  "share.down": "%s is down! Sneak next to them for 3 seconds to revive",
+  "share.down.wait": "You are down: a friend can revive you (%s s left)",
+  "share.reviving": "Reviving %s: %s%%",
+  "share.revived": "%s is back up"
 }

@@ -1,5 +1,13 @@
 {
   "key.share.mark": "مشاركة: علّم مكان لربعك",
   "share.config.loot": "غنيمة لكل لاعب قريب",
-  "share.config.marks": "علامات للربع (J)"
+  "share.config.marks": "علامات للربع (J)",
+  "share.config.revive": "إنعاش بدل الموت",
+  "share.config.throw": "ارمِ الغرض لربعك (Q)",
+  "share.config.pets": "الحيوانات الأليفة تطيع الاثنين",
+  "share.config.team_hit": "ضربة الفريق (+25% على وحش ضربه ربعك)",
+  "share.down": "%s طاح! اقعد جنبه 3 ثواني عشان تنعشه",
+  "share.down.wait": "طحت: ربعك يقدر ينعشك (باقي %s ث)",
+  "share.reviving": "جاري إنعاش %s: %s%%",
+  "share.revived": "%s قام من جديد"
 }

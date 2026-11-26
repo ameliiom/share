@@ -1,21 +1,28 @@
-//! Share: co-op comforts. A mob killed near friends drops its loot and experience once for each
-//! player near, each copy only its player may pick up; J marks a spot for your friends with a
-//! light beam and your name for 30 seconds. See `docs/design.md`.
+//! Share: co-op comforts for players together. See `docs/design.md`.
 //!
-//! - **The rules** (`rules.rs`): who gets a copy, how marks are kept, on plain values.
-//! - **Loot** (`loot.rs`): the server's copies of drops and experience.
-//! - **Marks** (`marks.rs`): the server's marks, names and what each player is sent.
-//! - **The client** (`client.rs`): the key and the beams.
+//! - **The rules** (`rules.rs`, `coop.rs`): every decision on plain values, unit tested.
+//! - **World** (`world.rs`): the clock and the players, read one way for all parts.
+//! - **Loot** (`loot.rs`): a mob's drops and experience once for each player near.
+//! - **Marks** (`marks.rs`, `client.rs`): J marks a spot with a beam and your name for 30 s.
+//! - **Revive** (`revive.rs`): down for 30 s instead of dead while a friend can come.
+//! - **Throw** (`throw.rs`): Q while looking at a friend hands them the item.
+//! - **Pets** (`pets.rs`): a friend's pets obey you too; team hit on a mob a friend just hit.
 mod client;
+pub mod coop;
 mod loot;
 mod marks;
 mod payloads;
+mod pets;
+mod revive;
 pub mod rules;
+mod throw;
+mod world;
 
 use mod_api::{
-    ClientHost, ClientTickPreEvent, EntityJoinLevelEvent, Flow, Hooks, IPayloadContext, KeyRegistration, LivingDropsEvent, LivingExperienceDropEvent,
-    PayloadId, PlayerLoggedOutEvent, PlayerRef, Registrar, RegistrationContext, RenderLevelStageEvent, ServerHost, ServerTickEvent, ServerTickPhase,
-    SettingSpec,
+    AttackEntityEvent, ClientHost, ClientTickPreEvent, EntityInteractEvent, EntityJoinLevelEvent, EntityLeaveLevelEvent, EntityTameEvent, Flow,
+    Hooks, Host, HostSide, IPayloadContext, InteractionResult, ItemTossEvent, KeyRegistration, LevelRandomHost, LivingDamagePostEvent,
+    LivingDamagePreEvent, LivingDeathEvent, LivingDropsEvent, LivingExperienceDropEvent, PayloadId, PlayerLoggedOutEvent, PlayerRef, Registrar,
+    RegistrationContext, RenderLevelStageEvent, ServerHost, ServerTickEvent, ServerTickPhase, SettingSpec,
 };
 #[allow(unused_imports)]
 use mod_api::prelude::*;
@@ -28,6 +35,17 @@ const MARK_KEY: &str = "mark";
 pub(crate) mod setting {
     pub const LOOT: &str = "loot";
     pub const MARKS: &str = "marks";
+    pub const REVIVE: &str = "revive";
+    pub const THROW: &str = "throw";
+    pub const PETS: &str = "pets";
+    pub const TEAM_HIT: &str = "team_hit";
+    /// Every setting, each a toggle on by default, labelled `share.config.<key>`.
+    pub const ALL: [&str; 6] = [LOOT, MARKS, REVIVE, THROW, PETS, TEAM_HIT];
+}
+
+/// Whether the setting `key` is on (a toggle, on unless set to false).
+pub(crate) fn enabled(host: &dyn Host, key: &str) -> bool {
+    host.setting(MOD_ID, key).is_none_or(|v| v.trim() != "false")
 }
 
 fn on_press(press: payloads::Press, cx: &mut dyn IPayloadContext) -> Result<(), String> {
@@ -53,8 +71,8 @@ impl Hooks for Mod {
         let mut key = KeyRegistration::new(MARK_KEY, "key.keyboard.j");
         key.label = "key.share.mark".into();
         r.register_key_mapping(key);
-        for (key, label) in [(setting::LOOT, "share.config.loot"), (setting::MARKS, "share.config.marks")] {
-            if let Err(e) = r.register_setting(SettingSpec::toggle(key, label, true)) {
+        for key in setting::ALL {
+            if let Err(e) = r.register_setting(SettingSpec::toggle(key, format!("share.config.{key}"), true)) {
                 eprintln!("[share] setting {key}: {e:?}");
             }
         }
@@ -92,17 +110,61 @@ impl Hooks for Mod {
 
     fn entity_join_level(&self, host: &mut dyn ServerHost, event: &mut EntityJoinLevelEvent<'_>) -> Flow {
         marks::joined(host, event.entity, event.kind);
+        pets::seen(host, event.entity, event.kind);
         Flow::Continue
+    }
+
+    fn entity_leave_level(&self, _: &mut dyn ServerHost, event: &mut EntityLeaveLevelEvent<'_>) {
+        pets::gone(event.entity);
+    }
+
+    fn entity_tame(&self, _: &mut dyn ServerHost, event: &mut EntityTameEvent<'_>) {
+        pets::tamed(event.entity, event.kind, event.owner);
+    }
+
+    fn entity_interact(&self, host: HostSide, event: &mut EntityInteractEvent<'_>) -> Option<InteractionResult> {
+        match host {
+            HostSide::Server(host) => pets::interact(host, event),
+            HostSide::Client(_) => None,
+        }
+    }
+
+    /// A player's health ran out: down instead, while a friend can come.
+    fn living_death(&self, host: &mut dyn ServerHost, event: &mut LivingDeathEvent<'_>) -> Flow {
+        if revive::death(host, event) { Flow::Cancel } else { Flow::Continue }
+    }
+
+    /// A downed player's blows do nothing.
+    fn attack_entity(&self, host: &mut dyn ServerHost, _: &mut AttackEntityEvent<'_>) -> Flow {
+        if host.players().acting_player().is_some_and(|p| revive::is_down(p.uuid())) { Flow::Cancel } else { Flow::Continue }
+    }
+
+    /// Q while looking at a friend hands them the item.
+    fn item_toss(&self, host: &mut dyn ServerHost, event: &mut ItemTossEvent) -> Flow {
+        throw::tossed(host, event);
+        Flow::Continue
+    }
+
+    fn living_damage_pre(&self, _: &mut dyn LevelRandomHost, event: &mut LivingDamagePreEvent<'_>) {
+        pets::damage(event);
+    }
+
+    fn living_damage_post(&self, _: &mut dyn LevelRandomHost, event: &mut LivingDamagePostEvent<'_>) {
+        pets::damaged(event);
     }
 
     fn server_tick(&self, host: &mut dyn ServerHost, event: &mut ServerTickEvent<'_>) {
         if matches!(event.phase, ServerTickPhase::ServerTickEnd { .. }) {
+            world::tick(host);
             loot::tick(host);
             marks::tick(host);
+            revive::tick(host);
+            pets::tick(host);
         }
     }
 
     fn player_logged_out(&self, _: &mut dyn ServerHost, event: &mut PlayerLoggedOutEvent<'_>) {
         marks::forget(event.player);
+        revive::forget(event.player);
     }
 }

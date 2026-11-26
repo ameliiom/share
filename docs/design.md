@@ -1,7 +1,7 @@
 # Share: design
 
-Co-op comforts for two or more players: loot that isn't fought over, and a way to point at a
-spot. Ideas 1 and 2 of `docs/batch-3.md` (picked 2026-11-26).
+Co-op comforts for two or more players. 0.1.0: ideas 1 and 2 of `docs/batch-3.md`; 0.2.0: the
+four comforts of `docs/batch-4.md` no other mod of the set already gives (picked 2026-11-26).
 
 ## 1. Outcome
 
@@ -42,7 +42,42 @@ items it picked up (a fox's mouth item), which are copied as well.
   through hills).
 - Setting **Marks for friends** (server) turns it off.
 
-## 4. Measured in the game (Horizon f037744, one player, 2026-11-26)
+## 4. Batch 4 (0.2.0): what is here, what is elsewhere
+
+Batch 4 (`docs/batch-4.md`) named eight comforts. Four already live in other mods of the set, so
+Share does not repeat them (one meaning, one place):
+
+| # | Comfort | Where |
+|---|---|---|
+| 1 | Friend through walls, edge arrows | **Team** (cards with distance and arrow, edge arrows, V pings) |
+| 2 | Friend's hearts and food on screen | **Team** cards |
+| 3 | Alert when a friend is hurt | **Team** (card flashes red); a sound and the 4-health rule would be added there |
+| 7 | Shared map | **Map** shows teammates already; sharing explored ground belongs in Map |
+| 4 | Revive instead of death | Share |
+| 5 | Throw to a friend | Share |
+| 6 | Pets for both | Share (sit and follow; see below) |
+| 8 | Team hit | Share |
+
+- **Revive**: with another playing player online, a player whose health runs out goes down for
+  30 s instead: health 1, slowness, weakness, resistance V (nothing hurts them but `/kill` and the
+  void), mining fatigue, and their blows do nothing. Everyone reads it in the action bar. A
+  friend sneaking within 2 blocks for 3 s brings them up at 4 health; stepping away resets it.
+  Time up, `/kill`, the void, creative, spectator, or no friend online: normal death. A downed
+  player who logs out is no longer down.
+- **Throw**: Q while a friend's body is within 16 blocks ahead and 0.9 off your line of sight: the
+  item appears at their feet, theirs alone (`ItemEntity.target`), with no pickup delay, so it goes
+  into their inventory at once, or waits there when it is full.
+- **Pets**: a friend's wolf, cat or parrot sits or stands on your empty-hand click; while its
+  owner is offline, elsewhere or 48+ blocks off, it walks to you (4–12 blocks) or appears beside
+  you (12–48), as it does for its owner. The tamer stays the owner. Tamed horses are anyone's to
+  ride already. **Not in**: wolves defending a friend. A set target, and the wolf's own anger
+  (`angry_at`, `anger_end_time`), both left a tamed wolf idle next to the foe; it fights only for
+  its owner (vanilla).
+- **Team hit**: a player's blow on a mob a friend hit within 2 s does 25% more. Never on players
+  or tamed animals.
+- Each has its own setting (Options > Mods > Share), on by default.
+
+## 5. Measured in the game (Horizon f037744, one player, 2026-11-26)
 
 One account only, so the sharing path was run with a test build that counted one extra player
 (solo shared with yourself), then the real build checked solo play.
@@ -55,13 +90,24 @@ One account only, so the sharing path was run with a test build that counted one
 | J again on that mark | gone (text display removed) |
 | Waiting | the mark there at 24 s, gone by about 30 s |
 
-Not tested in the game (needs a second account): two real players getting one copy each, a
-friend unable to pick up your copy, a friend seeing your beam and name.
+| 0.2.0, alone: a zombie's shovel | 1 shovel, no `Owner`, 3 orbs: solo play is vanilla |
+| 0.2.0, alone: 1000 damage | normal death (no friend online, no down) |
+| 0.2.0, alone: Q on dirt | dropped as usual, no owner |
+| 0.2.0, a wolf whose owner is offline: empty-hand click | `Sitting` 0b → 1b; again → 0b |
+| 0.2.0, same wolf, player walks 25 blocks off | the wolf appears beside the player within 1.5 s |
+| 0.2.0, same wolf, player 6 blocks off | it walks toward the player |
 
-## 5. Rules tested (`src/rules.rs`, `cargo test`)
+Not tested in the game (needs a second account): two real players getting one copy each, a
+friend unable to pick up your copy, a friend seeing your beam and name; going down and being
+revived; throwing to a friend; team hit's extra damage.
+
+## 6. Rules tested (`src/rules.rs`, `src/coop.rs`, `cargo test`)
 
 Solo stays vanilla · killer once and first · far, spectating and creative players get none · a far
 killer still gets theirs · a spectating killer gets none · players, armor stands and unhit deaths
 not shared · one copy of each drop per recipient, owned drops once · your own mark removed, a
 friend's not · the sixth mark replaces your oldest · marks go at 30 s · same spot in another
-dimension is a new mark · beam and fade geometry.
+dimension is a new mark · beam and fade geometry. · a player goes down only with a friend online · `/kill`, the void, creative and a second
+death are final · 3 s of sneaking revives · stepping away resets · 30 s alone is death · a throw
+goes to the nearest friend looked at, not past reach, behind or aside · team hit needs a friend's
+blow within 2 s, never on players or pets · pets follow a friend only while the owner is away.

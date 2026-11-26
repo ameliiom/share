@@ -14,8 +14,6 @@ const LABEL_TAG: &str = "share.mark";
 #[derive(Default)]
 struct State {
     marks: Marks,
-    /// The world's game time at the last server tick.
-    ticks: u64,
     /// The dimension each player was last sent the marks of.
     sent: HashMap<u128, String>,
     /// The text displays this server summoned and still shows.
@@ -30,8 +28,8 @@ fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
     f(STATE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(State::default))
 }
 
-pub fn on(host: &dyn Host) -> bool {
-    host.setting(crate::MOD_ID, crate::setting::MARKS).is_none_or(|v| v.trim() != "false")
+fn on(host: &dyn Host) -> bool {
+    crate::enabled(host, crate::setting::MARKS)
 }
 
 fn dimension(host: &dyn Host, p: PlayerRef) -> Option<String> {
@@ -50,10 +48,8 @@ pub fn press(host: &mut dyn ServerHost, p: PlayerRef, pos: Pos) {
     if far > f64::from(rules::REACH) + 2.0 {
         return;
     }
-    let pressed = with(|s| {
-        let now = s.ticks;
-        s.marks.press(p.uuid(), &name, &dim, pos, now)
-    });
+    let now = crate::world::now();
+    let pressed = with(|s| s.marks.press(p.uuid(), &name, &dim, pos, now));
     match pressed {
         Pressed::Removed(old) => unlabel(host, &old),
         Pressed::Placed { replaced } => {
@@ -133,7 +129,7 @@ fn view(dim: &str) -> payloads::Marks {
         for m in s.marks.list.iter().filter(|m| m.dimension == dim) {
             v.at.extend(m.pos.map(VarInt));
             v.colour.push(VarInt(rules::colour(m.owner) as i32));
-            v.left.push(VarInt(m.until.saturating_sub(s.ticks).min(i32::MAX as u64) as i32));
+            v.left.push(VarInt(m.until.saturating_sub(crate::world::now()).min(i32::MAX as u64) as i32));
         }
         v
     })
@@ -157,25 +153,15 @@ fn send_all(host: &mut dyn ServerHost) {
     }
 }
 
-/// The world's game time (one clock for every dimension), read through any player's level.
-fn game_time(host: &mut dyn ServerHost) -> Option<u64> {
-    let p = host.players().server_players().into_iter().next()?;
-    let read: &dyn Host = &*host;
-    p.level(read)?.game_time(read).and_then(|t| u64::try_from(t).ok())
-}
-
 pub fn tick(host: &mut dyn ServerHost) {
-    let Some(time) = game_time(host) else { return };
-    let (now, gone) = with(|s| {
-        s.ticks = time;
-        (s.ticks, s.marks.expire(s.ticks))
-    });
+    let now = crate::world::now();
+    let gone = with(|s| s.marks.expire(now));
     for m in &gone {
         unlabel(host, m);
     }
     if !gone.is_empty() {
         send_all(host);
-    } else if now % 20 == 0 {
+    } else if now.is_multiple_of(20) {
         // A player who joined or changed dimension gets that dimension's marks.
         for p in host.players().server_players() {
             let dim = dimension(&*host, p);

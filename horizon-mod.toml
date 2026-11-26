@@ -1,7 +1,7 @@
 id = "share"
 name = "Share"
-version = "0.1.0"
-description = "Co-op comforts: a mob's loot drops once for each player near, and J marks a spot for your friends with a light beam and your name."
+version = "0.2.0"
+description = "Co-op comforts: loot for each player near, J marks a spot, revive instead of death, throw items to a friend, pets for both, team hit."
 authors = ["ameliiom"]
 license = "MIT"
 api = "0.2"

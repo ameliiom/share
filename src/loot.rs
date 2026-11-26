@@ -1,7 +1,8 @@
 //! Loot for each player: a mob killed near friends drops its items once for each player near,
 //! each copy only its player may pick up, and its experience goes to each of them.
 use crate::rules::{self, Near};
-use mod_api::{GameMode, Host, ItemDrop, LivingDropsEvent, LivingExperienceDropEvent, PlayerRef, ServerHost};
+use crate::world;
+use mod_api::{Host, ItemDrop, LivingDropsEvent, LivingExperienceDropEvent, PlayerRef, ServerHost};
 #[allow(unused_imports)]
 use mod_api::prelude::*;
 use std::sync::Mutex;
@@ -9,8 +10,8 @@ use std::sync::Mutex;
 /// Experience to give on the next tick: (player, points).
 static OWED: Mutex<Vec<(u128, u32)>> = Mutex::new(Vec::new());
 
-pub fn on(host: &dyn Host) -> bool {
-    host.setting(crate::MOD_ID, crate::setting::LOOT).is_none_or(|v| v.trim() != "false")
+fn on(host: &dyn Host) -> bool {
+    crate::enabled(host, crate::setting::LOOT)
 }
 
 /// The recipients of the loot of `entity`, dying with `killer` to thank.
@@ -24,24 +25,19 @@ fn recipients(host: &mut dyn ServerHost, entity: u32, killer: Option<u128>) -> V
         .into_iter()
         .filter_map(|p: PlayerRef| {
             let pos = p.entity().position(read)?;
-            let playing = p.level(read) == Some(level) && matches!(p.game_mode(read), Some(GameMode::Survival | GameMode::Adventure));
+            let playing = p.level(read) == Some(level) && world::playing(read, p);
             Some(Near { uuid: p.uuid(), pos, playing })
         })
         .collect();
     rules::recipients(at, killer, &players)
 }
 
-/// The player whose entity id is `id`, if any.
-fn player_by_id(host: &mut dyn ServerHost, id: i32) -> Option<u128> {
-    let id = u32::try_from(id).ok().filter(|i| *i != 0)?;
-    host.players().server_players().into_iter().find(|p| p.entity().id() == id).map(|p| p.uuid())
-}
 
 pub fn drops(host: &mut dyn ServerHost, event: &mut LivingDropsEvent<'_>) {
     if !on(&*host) || event.cancelled || event.player.is_some() || !event.recently_hit {
         return;
     }
-    let killer = player_by_id(host, event.source.causing);
+    let killer = u32::try_from(event.source.causing).ok().and_then(|id| world::by_id(host, id)).map(|p| p.uuid());
     let who = recipients(host, event.entity, killer);
     if !rules::shared(event.kind, event.player.is_some(), event.recently_hit, who.len()) {
         return;
@@ -74,9 +70,8 @@ pub fn tick(host: &mut dyn ServerHost) {
     if owed.is_empty() {
         return;
     }
-    let players = host.players().server_players();
     for (uuid, points) in owed {
-        if let Some(p) = players.iter().copied().find(|p| p.uuid() == uuid) {
+        if let Some(p) = world::by_uuid(host, uuid) {
             p.give_experience_points(host, points);
         }
     }

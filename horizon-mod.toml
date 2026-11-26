@@ -1,12 +1,16 @@
 id = "share"
 name = "Share"
-version = "0.2.1"
+version = "0.2.2"
 description = "Co-op comforts: loot for each player near, revive instead of death, throw items to a friend, pets for both, team hit."
 authors = ["ameliiom"]
 license = "MIT"
 api = "0.2"
 side = "both"
 capabilities = ["registries"]
+
+[dependencies]
+# The shared code of ameliiom's mods (settings, comforts, inventory, outline, ...).
+kit = "^0.1"
 
 [native]
 game = "26.3"

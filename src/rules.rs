@@ -12,9 +12,6 @@ pub struct Near {
     pub playing: bool,
 }
 
-fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
-    (0..3).map(|i| (a[i] - b[i]).powi(2)).sum::<f64>().sqrt()
-}
 
 /// Who gets a copy of the loot of a mob that died at `at`: every playing player within
 /// [`NEAR`], and the `killer` wherever they stand if they play. Each once, killer first.
@@ -27,7 +24,7 @@ pub fn recipients(at: [f64; 3], killer: Option<u128>, players: &[Near]) -> Vec<u
         out.push(k);
     }
     for p in players {
-        if p.playing && distance(p.pos, at) <= NEAR && !out.contains(&p.uuid) {
+        if p.playing && crate::kit::near::within(p.pos, at, NEAR) && !out.contains(&p.uuid) {
             out.push(p.uuid);
         }
     }

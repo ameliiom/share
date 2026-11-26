@@ -32,9 +32,7 @@ pub fn playing(host: &dyn Host, p: PlayerRef) -> bool {
     matches!(p.game_mode(host), Some(GameMode::Survival | GameMode::Adventure))
 }
 
-pub fn by_uuid(host: &mut dyn ServerHost, uuid: u128) -> Option<PlayerRef> {
-    host.players().server_players().into_iter().find(|p| p.uuid() == uuid)
-}
+pub use crate::kit::players::by_uuid;
 
 pub fn by_id(host: &mut dyn ServerHost, id: u32) -> Option<PlayerRef> {
     if id == 0 {
@@ -43,6 +41,4 @@ pub fn by_id(host: &mut dyn ServerHost, id: u32) -> Option<PlayerRef> {
     host.players().server_players().into_iter().find(|p| p.entity().id() == id)
 }
 
-pub fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
-    (0..3).map(|i| (a[i] - b[i]).powi(2)).sum::<f64>().sqrt()
-}
+pub use crate::kit::near::distance;

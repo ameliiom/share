@@ -6,6 +6,14 @@
 //! - **Revive** (`revive.rs`): down for 30 s instead of dead while a friend can come.
 //! - **Throw** (`throw.rs`): Q while looking at a friend hands them the item.
 //! - **Pets** (`pets.rs`): a friend's pets obey you too; team hit on a mob a friend just hit.
+// Kit (ameliiom/kit), the shared code: the installed Kit mod, or its source in place for
+// local builds (`kit_local`, horizon-mods/.cargo/config.toml).
+#[cfg(kit_local)]
+#[allow(dead_code)]
+#[path = "../../kit/src/lib.rs"]
+mod kit;
+#[cfg(not(kit_local))]
+use ::kit;
 pub mod coop;
 mod loot;
 mod pets;
@@ -18,7 +26,7 @@ use mod_api::{
     AttackEntityEvent, EntityInteractEvent, EntityJoinLevelEvent, EntityLeaveLevelEvent, EntityTameEvent, Flow,
     Hooks, Host, HostSide, InteractionResult, ItemTossEvent, LevelRandomHost, LivingDamagePostEvent,
     LivingDamagePreEvent, LivingDeathEvent, LivingDropsEvent, LivingExperienceDropEvent, PlayerLoggedOutEvent, Registrar,
-    RegistrationContext, ServerHost, ServerTickEvent, ServerTickPhase, SettingSpec,
+    RegistrationContext, ServerHost, ServerTickEvent, ServerTickPhase,
 };
 #[allow(unused_imports)]
 use mod_api::prelude::*;
@@ -26,18 +34,19 @@ use mod_api::prelude::*;
 pub(crate) const MOD_ID: &str = "share";
 /// Settings (Options > Mods > Share), each on by default.
 pub(crate) mod setting {
-    pub const LOOT: &str = "loot";
-    pub const REVIVE: &str = "revive";
-    pub const THROW: &str = "throw";
-    pub const PETS: &str = "pets";
-    pub const TEAM_HIT: &str = "team_hit";
-    /// Every setting, each a toggle on by default, labelled `share.config.<key>`.
-    pub const ALL: [&str; 5] = [LOOT, REVIVE, THROW, PETS, TEAM_HIT];
+    use crate::kit::setting::Toggle;
+    pub const LOOT: Toggle = Toggle::on("loot");
+    pub const REVIVE: Toggle = Toggle::on("revive");
+    pub const THROW: Toggle = Toggle::on("throw");
+    pub const PETS: Toggle = Toggle::on("pets");
+    pub const TEAM_HIT: Toggle = Toggle::on("team_hit");
+    /// Every setting, labelled `share.config.<key>`.
+    pub const ALL: [Toggle; 5] = [LOOT, REVIVE, THROW, PETS, TEAM_HIT];
 }
 
-/// Whether the setting `key` is on (a toggle, on unless set to false).
-pub(crate) fn enabled(host: &dyn Host, key: &str) -> bool {
-    host.setting(MOD_ID, key).is_none_or(|v| v.trim() != "false")
+/// Whether the setting `key` is on.
+pub(crate) fn enabled(host: &dyn Host, key: kit::setting::Toggle) -> bool {
+    key.read(host, MOD_ID)
 }
 
 /// The name labels of the marks of 0.1–0.2.0 (J), retired for Team's pings: one left in a saved
@@ -63,8 +72,8 @@ pub struct Mod;
 impl Hooks for Mod {
     fn register(&self, r: &mut dyn Registrar, _cx: &RegistrationContext) {
         for key in setting::ALL {
-            if let Err(e) = r.register_setting(SettingSpec::toggle(key, format!("share.config.{key}"), true)) {
-                eprintln!("[share] setting {key}: {e:?}");
+            if let Err(e) = r.register_setting(key.spec(MOD_ID)) {
+                eprintln!("[share] setting {}: {e:?}", key.key);
             }
         }
     }

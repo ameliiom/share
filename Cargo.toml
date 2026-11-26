@@ -1,8 +1,12 @@
 [package]
 name = "mod-share"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 
 [dependencies]
 # The pinned SDK's API crate, fetched into .horizon/sdk/ by any `cargo horizon-mod` command.
 horizon-mod-api = { path = ".horizon/sdk/api/crates/horizon-mod-api" }
+
+[lints.rust]
+# `kit_local`: set for local builds by horizon-mods/.cargo/config.toml (Kit's source in place).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kit_local)'] }

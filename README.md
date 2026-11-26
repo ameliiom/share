@@ -18,6 +18,8 @@ Pings, friend locations, health cards and hurt alerts come from [Team](https://g
 - **0.1.0**: loot for each player near, J marks.
 
 ## Install
+Needs [Kit](https://github.com/ameliiom/kit) 0.1 or later, the shared code of these mods, installed the same way (`kit.hmod`, `mod.kit:true`).
+
 1. Copy `share.hmod` into `%APPDATA%\horizon\horizon-native-mods\`.
 2. Add the line `mod.share:true` to `%APPDATA%\horizon\horizon-mods.txt`.
 3. Build: the launcher's Mods page **Build**, or `horizon-launcher native-build --instance horizon --trust-native-code`. A native mod runs with your rights: install it only from a source you trust.
